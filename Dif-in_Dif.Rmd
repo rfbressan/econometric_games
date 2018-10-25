@@ -1,0 +1,220 @@
+---
+title: "Dif-in-Dif"
+author: "Rafael Felipe Bressan"
+date: "24 de outubro de 2018"
+output: 
+  pdf_document:
+    highlight: espresso
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(foreign) # Stata 12 files
+library(readstata13) # Stata 13 files
+library(stargazer)
+library(tidyverse)
+library(broom)
+```
+
+## Profissões escolhidas
+
+* Enfermeiro 2235
+* Eng. Mecânico 2144-05
+* Dentista 2232
+* Arquiteto 2141
+* Professor Primáio 2312
+
+```{r dta, cache=TRUE}
+file <- "RAIS_SC_2007_2009_2017.dta"
+rais_completa <- read.dta13(file = file)
+```
+
+```{r ajuste_dados}
+# Funcao para criar o nome das profissoes
+prof_fun <- function(codigo) {
+  l <- lapply(substr(as.character(codigo), 1, 4), function(x){
+    switch(x,
+           "2235" = "Enfermeiro",
+           "2144" = "Eng. Mecanico",
+           "2232" = "Dentista",
+           "2141" = "Arquiteto",
+           "2312" = "Professor Primario"
+    )
+  })
+  ans <- do.call(c, l)
+  return(ans)
+}
+
+# Filtrar apenas as profissões de interesse
+profissoes <- c(214405,
+                seq(223500, 223599),
+                seq(223200, 223299),
+                seq(214100, 214199),
+                seq(231200, 231299))
+rais_prof <- rais_completa %>% 
+  as_tibble() %>% 
+  filter(CBO2002 %in% profissoes &
+           idade >= 14 &
+           vnculoativo3112 != 0) %>% 
+  mutate(salariohora = vlremunmdianom / qtdhoracontr,
+         lnwh = log(salariohora),
+         idade2 = idade^2,
+         te = tempoemprego * 12,
+         dg = sexotrabalhador - 1,
+         profissao = prof_fun(CBO2002),
+         d07 = ifelse(ano == 2007, 1, 0),
+         d09 = ifelse(ano == 2009, 1, 0),
+         d17 = ifelse(ano == 2017, 1, 0),
+         dg07 = dg * d07,
+         dg09 = dg * d09,
+         dg17 = dg * d17) %>% 
+  filter(!is.infinite(lnwh)) %>%
+  group_by(profissao)
+```
+
+## Análise exploratória
+
+```{r exp_plot}
+# Criar boxplot por profissoes
+ggplot(rais_prof, aes(x = profissao, y = lnwh)) +
+  geom_boxplot(aes(color = profissao))
+```
+
+```{r exp_sumario, results="asis"}
+rais_prof %>% 
+  summarise(indiv = n(), mulheres = sum(dg), homens = n() - sum(dg)) %>% 
+  stargazer(type = "latex", 
+            title = "Número de observações por grupo e profissões",
+            summary = FALSE,
+            rownames = FALSE,
+            header = FALSE)
+```
+
+```{r exp_sumario_ano, results="asis"}
+rais_prof %>% 
+  group_by(profissao, dg, ano) %>% 
+  summarise(indiv = n()) %>% 
+  stargazer(type = "latex", 
+            title = "Número de observações por grupo, profissões e ano",
+            summary = FALSE,
+            rownames = FALSE,
+            header = FALSE)
+```
+
+```{r exp_salarios, results="asis"}
+rais_prof %>% 
+  summarise(min = min(lnwh), max = max(lnwh), mediana = median(lnwh), media = mean(lnwh)) %>% 
+    stargazer(type = "latex", 
+            title = "Estatísticas descritivas do log salário-hora.",
+            summary = FALSE,
+            rownames = FALSE,
+            digits = 4,
+            header = FALSE)
+```
+
+```{r exp_salarios2, results="asis"}
+rais_prof %>% 
+  group_by(profissao, dg) %>% 
+  summarise(min = min(lnwh), max = max(lnwh), mediana = median(lnwh), media = mean(lnwh)) %>% 
+  stargazer(type = "latex", 
+            title = "Estatísticas descritivas do log salário-hora, por grupo.",
+            summary = FALSE,
+            rownames = FALSE,
+            digits = 4,
+            header = FALSE)
+```
+
+## Modelo sem controles
+
+```{r did_sem_controle, results="asis"}
+m_sem_cont <- rais_prof %>% 
+  filter(ano >= 2009) %>% 
+  nest(-profissao) %>% 
+  mutate(
+    fit = map(data, ~ lm(lnwh ~ dg + d17 + dg17, data = .x)))
+stargazer(m_sem_cont$fit,
+          title = "Modelos Dif-in-Dif sem variáveis explanatórias.",
+          column.labels = m_sem_cont$profissao,
+          column.separate = rep(1, length(m_sem_cont$profissao)),
+          header = FALSE,
+          omit.stat = c("LL","ser","f"),
+          no.space = TRUE)
+```
+
+Agora faremos uma regressão utilizando o ano de 2007 como um contrafactual
+
+```{r did_sem_cont_contra, results="asis"}
+m_sem_contra <- rais_prof %>% 
+  filter(ano <= 2009) %>% 
+  nest(-profissao) %>% 
+  mutate(
+    fit = map(data, ~ lm(lnwh ~ dg + d07 + dg07, data = .x)))
+stargazer(m_sem_contra$fit,
+          title = "Modelos Dif-in-Dif sem variáveis explanatórias. Contrafactual",
+          column.labels = m_sem_contra$profissao,
+          column.separate = rep(1, length(m_sem_contra$profissao)),
+          header = FALSE,
+          omit.stat = c("LL","ser","f"),
+          no.space = TRUE)
+```
+
+## Modelo com controles
+
+Primeiro um modelo com controle para algumas variáveis que influenciam na formação de salários, mas sem considerar possíveis variações de inclinação destas variáveis (ie. efeitos fixos entre grupos e no tempo)
+
+```{r did_com_controle, results="asis"}
+m_com_cont <- rais_prof %>% 
+  filter(ano >= 2009) %>% 
+  nest(-profissao) %>% 
+  mutate(
+    fit = map(data, ~ lm(lnwh ~ te + idade + idade2 + escolaridadeaps2005 +
+                           tamanhoestabelecimento + dg + d17 + dg17, 
+                         data = .x)))
+stargazer(m_com_cont$fit,
+          title = "Modelos Dif-in-Dif com variáveis explanatórias.",
+          column.labels = m_com_cont$profissao,
+          column.separate = rep(1, length(m_com_cont$profissao)),
+          header = FALSE,
+          omit.stat = c("LL","ser","f"),
+          no.space = TRUE)
+```
+
+O contrafactual deste modelo é:
+
+```{r did_com_controle_contra, results="asis"}
+m_com_contra <- rais_prof %>% 
+  filter(ano <= 2009) %>% 
+  nest(-profissao) %>% 
+  mutate(
+    fit = map(data, ~ lm(lnwh ~ te + idade + idade2 + escolaridadeaps2005 + tamanhoestabelecimento + dg + d07 + dg07, data = .x)))
+stargazer(m_com_contra$fit,
+          title = "Modelos Dif-in-Dif com variáveis explanatórias. Contrafactual.",
+          column.labels = m_com_contra$profissao,
+          column.separate = rep(1, length(m_com_contra$profissao)),
+          header = FALSE,
+          omit.stat = c("LL","ser","f"),
+          no.space = TRUE)
+```
+
+Se abrirmos possibilidade para as inclinações das variáveis explicativas serem diferentes entre os grupos e no tempo, temos um modelo mais completo.
+
+```{r did_com_controle_incl, results="asis"}
+m_completo <- rais_prof %>% 
+  filter(ano >= 2009) %>% 
+  nest(-profissao) %>% 
+  mutate(
+    fit = map(data, ~ lm(lnwh ~ te + dg*te + d17*te + dg17*te + 
+                           idade + dg*idade + d17*idade + dg17*idade + 
+                           idade2 + dg*idade2 + d17*idade2 + dg17*idade2 + 
+                           escolaridadeaps2005 + dg*escolaridadeaps2005 + d17*escolaridadeaps2005 + dg17*escolaridadeaps2005 + 
+                           tamanhoestabelecimento + dg*tamanhoestabelecimento + d17*tamanhoestabelecimento + dg17*tamanhoestabelecimento + 
+                           dg + d17 + dg17, data = .x)))
+stargazer(m_completo$fit,
+          title = "Modelos Dif-in-Dif completo com variáveis explanatórias.",
+          column.labels = m_completo$profissao,
+          column.separate = rep(1, length(m_completo$profissao)),
+          header = FALSE,
+          omit.stat = c("LL","ser","f"),
+          no.space = TRUE)
+```
