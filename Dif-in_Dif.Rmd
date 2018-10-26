@@ -75,6 +75,8 @@ rais_prof <- rais_completa %>%
 
 ## Análise exploratória
 
+Abaixo é possível verificar através de _boxplots_ as distribuições de log salário-hora entre as profissões. Todas as profissões possuem medianas na faixa de 4 a 5 e grandes dispersões, sendo as mais acentuadas entre os professores primários e os enfermeiros.
+
 ```{r exp_plot}
 # Criar boxplot por profissoes
 ggplot(rais_prof, aes(x = profissao, y = lnwh)) +
@@ -88,8 +90,11 @@ rais_prof %>%
             title = "Número de observações por grupo e profissões",
             summary = FALSE,
             rownames = FALSE,
-            header = FALSE)
+            header = FALSE,
+            label = "tab:exp_sumario")
 ```
+
+Na tabela \ref{tab:exp_sumario} verificamos o número de observações nas amostras. O número total de indivíduos, mulheres e homens.
 
 ```{r exp_sumario_ano, results="asis"}
 rais_prof %>% 
@@ -99,24 +104,32 @@ rais_prof %>%
             title = "Número de observações por grupo, profissões e ano",
             summary = FALSE,
             rownames = FALSE,
-            header = FALSE)
+            header = FALSE,
+            label = "tab:exp_sumario_ano")
 ```
+
+A tabela \ref{tab:exp_sumario_ano} traz o número de indivíduos nas amostras separando por ano e gênero (dg = 0 são homens). É importante que em todos os anos tenhamos observações suficientes para realizar as regressões. Este estudo começou com outras duas profissões, Pediatra e Modelo, que neste ponto se mostraram inviáveis devido a ausência de observações para alguns anos. Apenas a profissão Eng. Mecânico para o gênero feminino mostra poucas observações, mas ainda assim passível de ser feita uma regressão de _cross-section_.
 
 ```{r exp_salarios, results="asis"}
 rais_prof %>% 
-  summarise(min = min(lnwh), max = max(lnwh), mediana = median(lnwh), media = mean(lnwh)) %>% 
+  summarise(min = min(lnwh), max = max(lnwh), 
+            mediana = median(lnwh), media = mean(lnwh)) %>%
+  mutate_all(format, digits = 4) %>% 
     stargazer(type = "latex", 
             title = "Estatísticas descritivas do log salário-hora.",
             summary = FALSE,
             rownames = FALSE,
-            digits = 4,
-            header = FALSE)
+            header = FALSE,
+            label = "tab:exp_salarios")
 ```
+
 
 ```{r exp_salarios2, results="asis"}
 rais_prof %>% 
   group_by(profissao, dg) %>% 
-  summarise(min = min(lnwh), max = max(lnwh), mediana = median(lnwh), media = mean(lnwh)) %>% 
+  summarise(min = min(lnwh), max = max(lnwh), 
+            mediana = median(lnwh), media = mean(lnwh)) %>% 
+  mutate_all(format, digits = 4) %>% 
   stargazer(type = "latex", 
             title = "Estatísticas descritivas do log salário-hora, por grupo.",
             summary = FALSE,
@@ -126,6 +139,10 @@ rais_prof %>%
 ```
 
 ## Modelo sem controles
+
+Abaixo na tabela \ref{tab:did_sem_controle} temos o primeiro modelo dif-in-dif sem controle para outras variáveis explanatórias. Nosso maior interesse é no coeficiente da variável `dg17`, que representa o impacto no salário-hora feminino após a introdução da lei da licença maternidade já descontados o efeito de gênero e tempo.
+
+Percebe-se que para apenas duas profissões este coeficiente é estatisticamente significativo a 1%, professor primário e dentista. Ambos coeficientes negativos indicando que as mulheres tiveram uma **perda** percentual em suas remunerações após a introdução desta lei (apesar de não podermos inferir causalidade neste modelo).
 
 ```{r did_sem_controle, results="asis"}
 m_sem_cont <- rais_prof %>% 
@@ -138,11 +155,12 @@ stargazer(m_sem_cont$fit,
           column.labels = m_sem_cont$profissao,
           column.separate = rep(1, length(m_sem_cont$profissao)),
           header = FALSE,
+          label = "tab:did_sem_controle",
           omit.stat = c("LL","ser","f"),
           no.space = TRUE)
 ```
 
-Agora faremos uma regressão utilizando o ano de 2007 como um contrafactual
+Agora faremos uma regressão utilizando o ano de 2007 como um contrafactual. Se a causa da redução da remuneração apontada anteriormente foi de fato a introdução da lei, então é de se esperar que nesta regressão contrafactual os coeficientes de `dg07` não possuam significância estatística. Este é o caso para dentista. Portanto, para esta profissão, temos algum indício de que o aumento do tempo de licença maternidade impactou negativamente a remuneração das mulheres dentitas. Entretanto, entre as professoras primárias, o contrafactual permanece significativo, indicando que existe algum outro fator omisso em nosso modelo que seria o responsável pelos desvios salariais.
 
 ```{r did_sem_cont_contra, results="asis"}
 m_sem_contra <- rais_prof %>% 
@@ -161,7 +179,7 @@ stargazer(m_sem_contra$fit,
 
 ## Modelo com controles
 
-Primeiro um modelo com controle para algumas variáveis que influenciam na formação de salários, mas sem considerar possíveis variações de inclinação destas variáveis (ie. efeitos fixos entre grupos e no tempo)
+Primeiro um modelo com controle para algumas variáveis que influenciam na formação de salários, mas sem considerar possíveis variações de inclinação destas variáveis (ie. efeitos fixos entre grupos e no tempo).
 
 ```{r did_com_controle, results="asis"}
 m_com_cont <- rais_prof %>% 
@@ -180,6 +198,8 @@ stargazer(m_com_cont$fit,
           no.space = TRUE)
 ```
 
+Novamente, apenas as profissões de professora primária e dentista verificaram reduções significativas em suas remunerações após a lei, mesmo levando em conta as variáveis de controle.
+
 O contrafactual deste modelo é:
 
 ```{r did_com_controle_contra, results="asis"}
@@ -196,6 +216,8 @@ stargazer(m_com_contra$fit,
           omit.stat = c("LL","ser","f"),
           no.space = TRUE)
 ```
+
+Na prova contrafactual, nenhuma das profissões apresentou significância estatística para `dg07`, portanto neste modelo com variáveis explanatórias, temos indícios que ambas as profissões, professora e dentista, sofreram perdas com a lei.
 
 Se abrirmos possibilidade para as inclinações das variáveis explicativas serem diferentes entre os grupos e no tempo, temos um modelo mais completo.
 
@@ -218,3 +240,6 @@ stargazer(m_completo$fit,
           omit.stat = c("LL","ser","f"),
           no.space = TRUE)
 ```
+
+Professoras e dentistas figuram novamente como as profissões com alterações do tipo _dif-in-dif_, porém desta vez as professoras parecem ser beneficiadas com a legislação, apresentando coeficiente `dg17` positivo.
+
