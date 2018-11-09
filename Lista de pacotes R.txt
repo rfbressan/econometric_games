@@ -1,0 +1,49 @@
+*****************************************************************
+********************* pacotes do R ******************************
+*****************************************************************
+
+****** Tabelas em latex 
+library('stargazer')
+
+****** Regressão Descontinua
+library('drobust')
+
+****** Teste de Dickey Fuller
+library('urca')
+
+****** Propensity Score Match
+library('MatchIt')
+library('Matching')
+library('stats')
+
+****** Controle Sintético 
+library('Synth')
+
+****** Ler arquivo .dta
+library('foreign') - versões anteriores ao stata 13
+library('readstata13') - versão do stata 13
+
+****** Modelagem GARCH
+library("tseries")
+library("zoo")
+library("forecast")
+library("FinTS")
+library("rugarch")
+
+****** Organização de dados
+library(tidyr)		# funções de limpeza de dados
+library(dplyr)		# funções para organização de dados em lote
+library(MASS) 		# várias funções básicas
+library(lubridate)	# variable coersion
+library(stringr) 	# manipulação de strings
+library(gdata)		# um monte de coisa incluindo ler planilhas excel
+
+****** Leitura de dados externos
+
+library(readxl)		# leitura de arquivos xlsx
+library(data.table)	# leitura de grandes arquivos de dados
+
+
+
+****** Analise de Portifolio
+library(PerformanceAnalytics)
