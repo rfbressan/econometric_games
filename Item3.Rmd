@@ -1,0 +1,131 @@
+---
+title: "Item 3"
+author: "marginais do crescimento"
+date: "11/10/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tibble)
+library(dplyr)
+library(stargazer)
+load("dados_econometric_games.RData")
+```
+
+```{r estados}
+uf_simbolos <- tribble(~uf, ~estado,
+                       11 , "RO",
+                       12 , "AC",
+                       13 , "AM",
+                       14 , "RR",
+                       15 , "PA",
+                       16 , "AP",
+                       17 , "TO",
+                       21 , "MA",
+                       22 , "PI",
+                       23 , "CE",
+                       24 , "RN",
+                       25 , "PB",
+                       26 , "PE",
+                       27 , "AL",
+                       28 , "SE",
+                       29 , "BA",
+                       31 , "MG",
+                       32 , "ES",
+                       33 , "RJ",
+                       35 , "SP",
+                       41 , "PR",
+                       42 , "SC",
+                       43 , "RS",
+                       50 , "MS",
+                       51 , "MT",
+                       52 , "GO",
+                       53 , "DF",) 
+```
+
+```{r inicio, include=FALSE}
+coorte_00 <- as_tibble(coorte_00)
+coorte_05 <- as_tibble(coorte_05)
+esf_00 <- as_tibble(esf_00)
+esf_05 <- as_tibble(esf_05)
+esf_total <- as_tibble(esf_total) %>% 
+  mutate(idmun = as.character(idmun))
+
+
+esf_total %>% 
+  group_by(idmun) %>% 
+  filter(ano %in% c(2000:2009)) %>% 
+  mutate(soma = sum(esf),
+         esf_00_09 = if_else(condition = soma != 0,
+                             true = 1,
+                             false = 0)) %>% 
+  select(-soma) %>% 
+  arrange(idmun) -> esf_00_09
+
+esf_total %>% 
+  group_by(idmun) %>% 
+  filter(ano %in% c(2005:2014)) %>% 
+  mutate(soma = sum(esf),
+         esf_05_14 = if_else(condition = soma != 0,
+                             true = 1,
+                             false = 0)) %>% 
+  select(-soma) %>% 
+  arrange(idmun) -> esf_05_14
+
+esf_00_09$esf_05_14 <- esf_05_14$esf_05_14
+
+
+##
+
+# 2000
+esf_00 %>% 
+  left_join(coorte_00,
+            by = c("idmun", "ano")) -> a2000
+
+# 2005
+esf_05 %>% 
+  left_join(coorte_05,
+            by = c("idmun", "ano")) -> a2005
+
+bind_rows(a2000,a2005) %>% 
+  mutate(idmun = as.character(idmun)) -> dados_item3 
+
+#esf_00_09 %>% 
+#  mutate(ano = as.character(ano)) -> esf_00_09
+
+
+dados_item3 %>%
+  select(-esf) %>% 
+  left_join(esf_00_09,
+            by = c("idmun","ano")) %>% 
+  left_join(uf_simbolos, by = "uf") %>% 
+  mutate(ano = as.factor(ano),
+         estado = as.factor(estado)) -> dados_item3
+
+# View(dados_item3)
+
+# modelo ------------------------------------------------------------------
+reg1 <- lm(matricula~esf_00_09+esf_05_14+esf+ano+estado+nv,data = dados_item3)
+sum1 <- summary(reg1) 
+
+```
+
+
+```{r, results='asis'}
+stargazer(reg1, 
+          header = F,
+          title = "Regressão Diferença em Diferença com esf pós nascimento.",
+          single.row = TRUE)
+```
+
+```{r pool}
+pool <- coorte_00 %>% 
+  bind_rows(coorte_05) %>% 
+  left_join(esf_total, by = c("idmun", "ano")) %>% 
+  left_join(uf_simbolos, by = "uf") %>% 
+  mutate(estado = as.factor(estado),
+         ano = as.factor(ano))
+
+modelo_pool <- lm(matricula ~ nv + ano + estado + esf, data = pool)
+```

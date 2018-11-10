@@ -179,3 +179,4 @@ table_eg = function(DF, ...){
                        header = FALSE,
                        title = "Testes de Engle-Granger.")
 }
+
