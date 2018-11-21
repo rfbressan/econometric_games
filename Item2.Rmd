@@ -91,3 +91,41 @@ ggplot(scatter_esf, aes(x = nv, y = matricula, color = esf)) +
 #  scale_color_viridis_d() +
   theme_classic()
 ```
+
+## Resolução _post factum_
+
+O grupo controle será aquele que não possui ESF em 2005, mesmo que o possuisse em 2000. O grupo tratado são aqueles municípios que **NÃO** possuiam ESF em 2000 E o apresentavam em 2005. 
+
+Esta dummy de controle será chamada _muntrat_ para municípios tratados. A variável ano controla o antes e depois do tratamento. A UF controlará fatores específicos dos estados e os nascidos vivos controle _per capita_, apenas em seus interceptos, mas não nas inclinações relativas ao tratamento.
+
+\begin{align*}
+mat&=\alpha_0+\alpha_1 muntrat+\alpha_2 ano + \alpha_3 muntrat*ano + \\
+& + \beta_0 UF + \gamma_0 NV + \epsilon
+\end{align*}
+
+O coeficiente dif-in-dif de interesse é $\alpha_3$.
+
+```{r modelo_pos, results="asis"}
+esf <- esf_00 %>% 
+  left_join(esf_05, by = "idmun") %>% 
+  mutate(muntrat = as.numeric(!esf.x & esf.y)) %>% 
+  gather(key = var_ano, value = ano, c(ano.x, ano.y)) %>% 
+  select(c(idmun, ano, muntrat)) 
+
+coortes <- coorte_00 %>% 
+  bind_rows(coorte_05)
+
+dados <- esf %>% 
+  left_join(coortes, by = c("idmun", "ano")) %>% 
+  mutate(ano = as.factor(ano),
+         uf = as.factor(uf))
+
+modelo <- lm(matricula ~ muntrat + ano + muntrat*ano + uf + nv,
+               # muntrat*uf + ano*uf + muntrat*ano*uf +
+               # muntrat*nv + ano*nv + muntrat*ano*nv,
+             data = dados)
+stargazer(modelo,
+          header = FALSE,
+          title = "Regressão de Diferenças em Diferenças (2005 - 2000)",
+          single.row = TRUE)
+```

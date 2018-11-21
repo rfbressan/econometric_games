@@ -4,7 +4,7 @@
 # install.packages("plm")
 library(plm)
 
-mydata<- read.csv("C:/Econometrics/Data/panel_wage.csv")
+mydata <- read.csv("panel_wage.csv")
 attach(mydata)
 
 Y <- cbind(lwage)
@@ -21,7 +21,7 @@ summary(X)
 pooling <- plm(Y ~ X, data=pdata, model= "pooling")
 summary(pooling)
 
-# Between estimator
+# Between estimator. For long run relationships
 between <- plm(Y ~ X, data=pdata, model= "between")
 summary(between)
 

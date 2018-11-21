@@ -1,0 +1,414 @@
+---
+title: "Relatório Analítico"
+author: "Rafael Felipe Bressan"
+date: "22 de novembro de 2018"
+output: 
+  pdf_document:
+    highlight: tango
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(robustbase)
+library(sandwich)
+library(lmtest)
+library(plm) # Modelo em painel
+library(foreign) # Stata 12 files
+library(readstata13) # Stata 13 files
+library(InformationValue) # Probit/logit matriz de informacao
+library(stargazer)
+library(tidyverse)
+library(broom)
+```
+
+# Introdução
+
+Este relatório tem por objetivo formular um modelo econômico que relacione o nível de desenvolvimento humano, medido pelo IDH do município, com fatores determinantes deste, como renda, capital humano, infraestrutura, desigualdade, mercado de trabalho, etc.
+
+Após a formulação do modelo, parte-se para o teste econométrico com dados levantados das respectivas fontes. Este estudo busca determinar quais fatores são realmente relavantes para a determinação do IDH do munícipio e portanto merecem investimentos públicos.
+
+# Desenvolvimento
+
+O modelo proposto de explicação do IDH é um modelo do tipo linear, com XX variáveis explicativas, os regressores, um termo constante e um termo de erro aleatório que representa as variações de IDH que não são captadas pelas variações nos regressores. A equação de regressão a ser estudada é:
+
+$$idh=\beta_1+\beta_2 y+\beta_3 h+\beta_4 ie+\varepsilon$$  
+
+Os dados foram obtidos do XXXX professor Fernando Pozzobon. A nomenclatura das váriáveis é apresentada na tabela seguinte.
+
+```{r read_data}
+dados <- read.csv("panel_wage.csv")
+# Marca os dados como dados em painel
+# Possivelmente sera municipio e tempo
+pdados <- pdata.frame(dados, index = c("id","t")) %>% 
+  mutate(fem = as.factor(fem))
+```
+
+```{r nomes, results = "asis"}
+nomes <- tibble(variavel = head(names(dados),3),
+                nome = c("Experiencia", "Semanas", "OCC"))
+knitr::kable(nomes,
+             caption = "Dados utilizados no estudo.",
+             col.names = c("Variável", "Nome"))
+```
+
+## Análise exploratória
+
+Primeiramente analisou-se algumas estatísticas descritivas para as variáveis do modelo, inclusive aquela que se deseja explicar. 
+
+```{r descritivas, results = "asis"}
+# As variaveis indice do painel, id e t, nao aparecem
+stargazer(pdados,
+          header = FALSE,
+          title = "Estatísticas descritivas dos dados utilizados.")
+```
+
+
+Abaixo é possível verificar através de _boxplots_ as distribuições de idh entre os municípiios para cada data escolhida. Pode-se verificar que existe uma certa dispersão de idh entre os municípios e que a tendência temporal é de aumento do idh, para todos os municípios (para a mediana dos municípios).
+
+```{r boxplot_t}
+# Criar boxplot por tempo
+ggplot(pdados, aes(x = t, y = lwage)) +
+  geom_boxplot(aes(color = t)) +
+  guides(color = guide_legend(title = "Ano")) +
+  theme_classic()
+
+```
+
+Caso se agrupe os municípios por candidatos a receber investimentos ou não, e plotar novamente um _boxplot_ comparando estes dois grupos, pode-se aferir diferenças iniciais nos níveis médios de IDH entre os grupos. 
+
+```{r boxplot_grupo}
+# Criar boxplot por grupo
+pdados %>% 
+  ggplot(aes(x = fem, y = lwage)) +
+  geom_boxplot(aes(color = fem)) +
+  guides(color = guide_legend(title = "Grupo")) +
+  theme_classic()
+```
+
+Fica bem claro, portanto, que os municípios que ainda não receberam investimentos, logo são os candidatos naturais a recebê-los, estão em situação de desvantagem em relação aos municípios que recebem mais investimentos e possuem maiores níveis de IDH.
+
+Se o objetivo é estudar como o IDH é impactado por algum fator, como por exemplo renda, controlando para as diferenças entre os grupos, pode-se iniciar o estudo com um gráfico de dispersão entre idh e o fator a ser estudado, ressaltando os diferentes grupos através de cores. A figura abaixo mostra tal gráfico.
+
+```{r dispersao}
+ggplot(pdados, aes(x = exp, y = lwage, color = fem)) +
+  geom_point() +
+  # labs(title = "Scatter Plot",
+  #      y = "Nascidos Vivos em 2000",
+  #      x = "Matrículas em 2010",
+  #      caption = "Obs: retirados os municípios com mais de 50.000 matrículas") +
+  geom_smooth(method = "lm") +
+  guides(color = guide_legend(title = "Grupo")) +
+  theme_classic()
+```
+
+No gráfico acima ainda foram introduzidas retas de regressão linear para cada grupo, evidenciando o fato de existirem interceptos diferentes entre os grupos, porém não existem evidências visuais de diferenças nas inclinações do IDH em relação a renda entre os grupos.
+
+## Modelo de diferença em diferença sem controles
+
+Abaixo na tabela \ref{tab:did_sem_rob} temos o primeiro modelo dif-in-dif sem controle para outras variáveis explanatórias. Nosso maior interesse é no coeficiente da variável `dg17`, que representa o impacto no salário-hora feminino após a introdução da lei da licença maternidade já descontados o efeito de gênero e tempo.
+
+Percebe-se que para apenas duas profissões este coeficiente é estatisticamente significativo a 1%, professor primário e dentista. Ambos coeficientes negativos indicando que as mulheres tiveram uma **perda** percentual em suas remunerações após a introdução desta lei (apesar de não podermos inferir causalidade neste modelo).
+
+```{r did_sem_controle}
+m_sem_cont <- pdados %>% 
+  filter(t %in% c("4", "7")) %>% 
+  nest() %>% 
+  mutate(
+    fitlm = map(data, ~ lm(lwage ~ fem + t + fem*t, data = .x)),
+    fitlmrob = map(data, ~lmrob(lwage ~ fem + t + fem*t, data = .x)),
+    coef_sand = map(fitlm, ~coeftest(.x, vcov. = vcovHC(.x))),
+    bptest = map(fitlm, ~bptest(.x)))
+```
+
+Este modelo quando realizados com estimadores **não** robustos, apresenta os seguintes resultados.
+
+```{r no_rob, results="asis"}
+stargazer(m_sem_cont$fitlm,
+          title = "Modelo Dif-in-Dif sem estimadores robustos.",
+          # column.labels = m_sem_cont$profissao,
+          # column.separate = rep(1, length(m_sem_cont$profissao)),
+          header = FALSE,
+          label = "tab:did_sem_rob",
+          # omit.stat = c("LL","ser","f"),
+          no.space = TRUE)
+```
+
+Entretanto, o teste de Breusch-Pagan para heterocedasticidade, apresenta o seguinte resultado:
+
+```{r bp_sem_controle, results = "asis"}
+m_sem_cont$bptest[[1]] %>% 
+  tidy() %>% 
+  select(-3) %>% 
+  knitr::kable(digits = 4,
+               col.names = c("Estatística", "P-valor", "Método"),
+               caption = "Teste de Breusch-Pagan para heterocedasticidade.")
+```
+
+De modo que ao nível de significância de 5\% deve-se rejeitar a hipótese nula de ausência de heterocedasticidade e, portanto, o modelo utilizado sofre de ineficiência dos estimadores, os erros-padrão reportados podem estar subestimados e existe a possbilidade de os estimadores, especialmente o coeficiente dif-in-dif não ser significativo. Resolve-se este problema com o uso de um estimador robusto para os erros-padrão assim como proposto por White.
+
+O modelo com estimadores originais e erros robustos está apresentado na tabela \ref{tab:did_com_erro_rob}.
+
+```{r rob_sand, results="asis"}
+stargazer(m_sem_cont$coef_sand,
+          title = "Modelo Dif-in-Dif com erros robustos.",
+          # column.labels = m_sem_cont$profissao,
+          # column.separate = rep(1, length(m_sem_cont$profissao)),
+          header = FALSE,
+          label = "tab:did_com_erro_rob",
+          # omit.stat = c("LL","ser","f"),
+          no.space = TRUE)
+```
+
+A partir de agora, todos os modelos apresentados contarão com erros padrão estimados de forma robusta.
+
+### Teste de robustez - contrafactual
+
+Agora faremos uma regressão utilizando o ano de 2007 como um contrafactual. Se a causa da redução da remuneração apontada anteriormente foi de fato a introdução da lei, então é de se esperar que nesta regressão contrafactual os coeficientes de `dg07` não possuam significância estatística. Este é o caso para dentista. Portanto, para esta profissão, temos algum indício de que o aumento do tempo de licença maternidade impactou negativamente a remuneração das mulheres dentitas. Entretanto, entre as professoras primárias, o contrafactual permanece significativo, indicando que existe algum outro fator omisso em nosso modelo que seria o responsável pelos desvios salariais.
+
+```{r did_sem_cont_contra, results="asis"}
+m_sem_contra <- pdados %>% 
+  filter(t %in% c("4", "1")) %>% 
+  nest() %>% 
+  mutate(
+    fitlm = map(data, ~ lm(lwage ~ fem + t + fem*t, data = .x)),
+    coef_sand = map(fitlm, ~coeftest(.x, vcov. = vcovHC(.x))),
+    bptest = map(fitlm, ~bptest(.x)))
+stargazer(m_sem_contra$coef_sand,
+          title = "Modelo Dif-in-Dif sem variáveis explanatórias. Contrafactual",
+          # column.labels = m_sem_contra$profissao,
+          # column.separate = rep(1, length(m_sem_contra$profissao)),
+          header = FALSE,
+          # omit.stat = c("LL","ser","f"),
+          no.space = TRUE)
+```
+
+## Modelo com controles
+
+Primeiro um modelo com controle para algumas variáveis que influenciam na formação de salários, mas sem considerar possíveis variações de inclinação destas variáveis (ie. efeitos fixos entre grupos e no tempo).
+
+```{r did_com_controle, results="asis"}
+m_com_cont <- pdados %>% 
+  filter(t %in% c("4", "7")) %>%
+  nest() %>% 
+  mutate(
+    fitlm = map(data, ~ lm(lwage ~ fem + t + fem*t + 
+                             exp2 + exp2*fem + exp2*t + exp2*fem*t, 
+                           data = .x)),
+    coef_sand = map(fitlm, ~coeftest(.x, vcov. = vcovHC(.x))))
+
+stargazer(m_com_cont$coef_sand,
+          title = "Modelo Dif-in-Dif com variáveis explanatórias.",
+          # column.labels = m_com_cont$profissao,
+          # column.separate = rep(1, length(m_com_cont$profissao)),
+          header = FALSE,
+          # omit.stat = c("LL","ser","f"),
+          no.space = TRUE)
+```
+
+Novamente, apenas as profissões de professora primária e dentista verificaram reduções significativas em suas remunerações após a lei, mesmo levando em conta as variáveis de controle.
+
+O contrafactual deste modelo é:
+
+```{r did_com_controle_contra, results="asis"}
+m_com_contra <- pdados %>% 
+  filter(t %in% c("4", "1")) %>%
+  nest() %>% 
+  mutate(
+    fitlm = map(data, ~ lm(lwage ~ fem + t + fem*t + 
+                             exp2 + exp2*fem + exp2*t + exp2*fem*t, 
+                           data = .x)),
+    coef_sand = map(fitlm, ~coeftest(.x, vcov. = vcovHC(.x))))
+
+stargazer(m_com_contra$coef_sand,
+          title = "Modelos Dif-in-Dif com variáveis explanatórias. Contrafactual.",
+          # column.labels = m_com_contra$profissao,
+          # column.separate = rep(1, length(m_com_contra$profissao)),
+          header = FALSE,
+          # omit.stat = c("LL","ser","f"),
+          no.space = TRUE)
+```
+
+Na prova contrafactual, nenhuma das profissões apresentou significância estatística para `dg07`, portanto neste modelo com variáveis explanatórias, temos indícios que ambas as profissões, professora e dentista, sofreram perdas com a lei.
+
+
+# Modelo de painel
+
+```{r panel_data, results="asis"}
+mydata <- read.csv("panel_wage.csv")
+Y <- select(mydata, lwage)
+X <- mydata %>% 
+  select(c(exp, exp2, wks, ed))
+
+# Set data as panel data
+pdata <- pdata.frame(mydata, index = c("id","t"))
+
+# Descriptive statistics
+stargazer(cbind(Y, X),
+          header = FALSE,
+          title = "Estatísticas descritivas das variáveis do modelo em painel.")
+```
+
+Boxplot por tempo (cross-section entre os IDs)
+
+```{r boxplot}
+ggplot(pdata, aes(x = t, y = lwage, color = t)) +
+  geom_boxplot() +
+  labs(title = "Boxplot",
+       y = "Log salario-hora",
+       x = "tempo") +
+  theme_classic()
+```
+
+```{r pmodels}
+# Pooled OLS estimator
+pooling <- plm(lwage ~ exp + exp2 + wks + ed, 
+               data = pdata, 
+               model = "pooling")
+
+# Between estimator. For long run relationships
+between <- plm(lwage ~ exp + exp2 + wks + ed, 
+               data = pdata, 
+               model = "between")
+
+# First differences estimator
+firstdiff <- plm(lwage ~ exp + exp2 + wks + ed, 
+               data = pdata, 
+               model = "fd")
+
+# Fixed effects or within estimator
+fixed <- plm(lwage ~ exp + exp2 + wks + ed, 
+               data = pdata, 
+               model = "within")
+
+# Random effects estimator
+random <- plm(lwage ~ exp + exp2 + wks + ed, 
+               data = pdata, 
+               model = "random")
+```
+
+## Modelos
+
+Pooled: para ser usado quando não existe heterogeneidade entre os indivíduos.
+
+Efeitos Fixos: Heterogeneidade invariante no tempo e correlacionada com os regressores.
+
+Efeitos Aleatórios: Heterogeneidade não correlacionada com os regressores.
+
+Primeirda Diferença: Similiar a efeitos fixos
+
+```{r ptables, results="asis"}
+stargazer(pooling, fixed, random,
+          title = "Modelos estimados",
+          align = FALSE,
+          header = FALSE,
+          column.labels = c("Pooled", "EF", "EA"))
+```
+
+Testes para verificar qual o modelo adequado a ser utilizado:
+
+Teste Fcmg para verificar presença de heterogeineidade. Escolhe entre modelo pooled e EF.
+
+Teste de autocorrelação serial nos resíduos pooled. Escolhe entre pooled e EA. Teste de Breusch-Godfrey foi refinado por Honda. Honda Y (1985).  “Testing the Error Components Model With Non–Normal Disturbances.” Review of Economic Studies, 52 (4), 681–690.
+
+Teste de Haussmann de igualdade de estimadores. Escolhe entre EF e EA. Ha significa escolher EF.
+
+```{r ptestes, results="asis"}
+# LM test for random effects versus OLS
+lmtest <- plmtest(pooling) %>% 
+  tidy() %>% 
+  select(method, statistic, p.value)
+
+# LM test for fixed effects versus OLS
+fcmg <- pFtest(fixed, pooling) %>% 
+  tidy() %>% 
+  select(method, statistic, p.value)
+
+# Hausman test for fixed versus random effects model
+hauss <- phtest(random, fixed) %>% 
+  tidy() %>% 
+  select(method, statistic, p.value)
+
+all_tests <- bind_rows(fcmg, lmtest, hauss)
+names(all_tests) <- c("Método", "Estatística", "P-valor")
+stargazer(all_tests,
+          summary = FALSE,
+          header = FALSE,
+          rownames = FALSE,
+          # column.labels = c("Método", "Estatística", "P-valor"),
+          title = "Testes para determinar o modelo em painel a ser utilizado.")
+```
+
+# Modelo probit
+
+Com base na amostra de municípios fornecida foi possível estimar um modelo probit para determinar os munícipios que devem receber investimentos públicos ou não. A partir deste modelo, pode-se determinar se um município que está fora da amostra deve receber investimentos tendo em vista a melhoria de seu IDH ou não. Dadas as características do município, aquelas que foram utilizadas para explicar os níveis de IDH e a necessidade de investimentos, insere-se estas características no modelo e este retornará como resposta a necessidade de provisão de recursos públicos para aquele município. Esta análise foi feita para os seguintes municípios: XXX, XXX, xXXX e BALALAA
+
+Primeiramente, o modelo probit ajustado com os dados fornecidos.
+
+```{r probit_model}
+probit <- glm(ind ~ lwage + fem,
+              data = pdados,
+              family = binomial(link = "probit"))
+pprobit <- predict(probit, pdados, type = "response")
+opt_cut <- optimalCutoff(pdados$ind, pprobit)[1]
+novos_muni <- pdados %>% 
+  sample_n(size = 4)
+```
+
+```{r modelo_probit, results = "asis"}
+stargazer(probit,
+          title = "Modelo probit ajustado.",
+          header = FALSE)
+```
+
+Uma forma de avaliar o ajuste deste modelo é através da matriz de porcentagem corretamente prevista. Esta matriz nos fornece um cruzamento entre as respostas previstas pelo modelo ajustado contra a verdadeira resposta na amostra. O resultado do modelo foi o seguinte.
+
+```{r matriz, results = "asis"}
+knitr::kable(
+  confusionMatrix(pdados$ind, pprobit, 
+                  threshold = opt_cut) / nrow(pdados),
+  digits = 4,
+  caption = "Matriz de porcentagem corretamente prevista do modelo probit."
+)
+```
+
+Deseja-se que a diagonal principal da matriz (acerto de previsão) contenha os maiores percentuais possíveis. De acordo com esta matriz para o modelo ajustado este foi exatamente o resultado encontrado, evidenciando um bom ajuste.
+
+Com os dados deste modelo é possível fazer uma previsão de resposta com dados fora da amostra, no caso municípios que não integram a base de dados utilizada para fazer o ajuste do modelo. Os dados das variáveis explanatórias destes novos municípios são inseridos no modelo ajustado e o resultado será o valor estimado para a variável binária de interesse. O resultado desta previsão segue na tabela abaixo.
+
+```{r previsao, results = "asis"}
+novos <- paste("Município", 1:4)
+previsto <- predict(probit, novos_muni, type = "response")
+previsto <- ifelse(previsto >= opt_cut, 1, 0)
+previsao_tbl <- tibble(municipio = novos,
+                       previsao = previsto)
+knitr::kable(previsao_tbl,
+             col.names = c("Município", "Previsão"),
+             caption = "Resultado da previsão do modelo probit.")
+```
+
+# Conclusão
+
+blablabla
+
+# Apêndice
+
+```{r apendice, echo = TRUE, eval = FALSE}
+library(robustbase)
+library(sandwich)
+library(lmtest)
+library(plm) # Modelo em painel
+library(foreign) # Stata 12 files
+library(readstata13) # Stata 13 files
+library(InformationValue) # Probit/logit matriz de informacao
+library(stargazer)
+library(tidyverse)
+library(broom)
+
+dados <- read.csv("panel_wage.csv")
+# Marca os dados como dados em painel
+# Possivelmente sera municipio e tempo
+pdados <- pdata.frame(dados, index = c("id","t")) %>% 
+  mutate(fem = as.factor(fem))
+```
