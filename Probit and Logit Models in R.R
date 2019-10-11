@@ -1,7 +1,7 @@
 # Probit and Logit Models in R
 # Copyright 2013 by Ani Katchova
 
-mydata<- read.csv("C:/Econometrics/Data/probit_insurance.csv")
+mydata<- read.csv("probit_insurance.csv")
 attach(mydata)
 
 # Define variables

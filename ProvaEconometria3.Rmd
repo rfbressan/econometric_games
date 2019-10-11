@@ -25,29 +25,40 @@ library(broom)
 
 # Introdução
 
-Este relatório tem por objetivo formular um modelo econômico que relacione o nível de desenvolvimento humano, medido pelo IDH do município, com fatores determinantes deste, como renda, capital humano, infraestrutura, desigualdade, mercado de trabalho, etc.
+Este relatório tem por objetivo formular um modelo econômico que relacione a atratividade de investimento público em um município com fatores determinantes deste, como renda per capita, índice de gini, infraestrutura, anos de escolaridade e expectativa de vida
 
-Após a formulação do modelo, parte-se para o teste econométrico com dados levantados das respectivas fontes. Este estudo busca determinar quais fatores são realmente relavantes para a determinação do IDH do munícipio e portanto merecem investimentos públicos.
+Após a formulação do modelo, parte-se para o teste econométrico com dados levantados das respectivas fontes. Este estudo busca determinar quais fatores são realmente relavantes para a determinação dos investimentos públicos.
 
 # Desenvolvimento
 
-O modelo proposto de explicação do IDH é um modelo do tipo linear, com XX variáveis explicativas, os regressores, um termo constante e um termo de erro aleatório que representa as variações de IDH que não são captadas pelas variações nos regressores. A equação de regressão a ser estudada é:
+O modelo proposto de explicação do investimento é um modelo do tipo probit, com 5 variáveis explicativas, os regressores, um termo constante e um termo de erro aleatório que representa as variações de na probabilidade de receber investimento que não são captadas pelas variações nos regressores. A equação de regressão a ser estudada é:
 
-$$idh=\beta_1+\beta_2 y+\beta_3 h+\beta_4 ie+\varepsilon$$  
+$$Prob(investimento|X)=G(X+\varepsilon)$$  
+onde a função $G(X+\varepsilon)$ é a função densidade acumulada da normal, resultando portanto, em um modelo probit. $X$ é a matriz contendo os regressorese o termo constante.
 
-Os dados foram obtidos do XXXX professor Fernando Pozzobon. A nomenclatura das váriáveis é apresentada na tabela seguinte.
+Os dados foram obtidos do professor Fernando Pozzobon. A nomenclatura das váriáveis é apresentada na tabela seguinte.
 
 ```{r read_data}
-dados <- read.csv("panel_wage.csv")
+dados_completos <- read.csv2("dados.csv")
+dados <- dados_completos %>% 
+  filter(!is.na(investimento))
+novos <- dados_completos %>% 
+  filter(is.na(investimento))
 # Marca os dados como dados em painel
 # Possivelmente sera municipio e tempo
-pdados <- pdata.frame(dados, index = c("id","t")) %>% 
-  mutate(fem = as.factor(fem))
+# pdados <- pdata.frame(dados, index = c("id","t")) %>% 
+#   mutate(fem = as.factor(fem))
 ```
 
 ```{r nomes, results = "asis"}
-nomes <- tibble(variavel = head(names(dados),3),
-                nome = c("Experiencia", "Semanas", "OCC"))
+dados_sel <- dados %>% 
+  select(espvida, e_anosestudo, gini, rdpc, agua_esgoto)
+nomes <- tibble(variavel = names(dados_sel),
+                nome = c("Esperança de vida", 
+                         "Anos de estudo com 18 anos", 
+                         "Índice de Gini",
+                         "Renda per capita",
+                         "Percentual domicílios com água e esgoto"))
 knitr::kable(nomes,
              caption = "Dados utilizados no estudo.",
              col.names = c("Variável", "Nome"))

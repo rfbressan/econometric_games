@@ -1,0 +1,23 @@
+---
+title: "Untitled"
+author: "Rafael Felipe Bressan"
+date: "27 de novembro de 2018"
+output: 
+  bookdown::pdf_book:
+    keep_tex: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(kableExtra)
+```
+
+## R Markdown
+
+```{r descricao, results='asis'}
+iris[,1:2] %>% 
+  kable(caption = "Variáveis presentes na base de dados.", 
+        booktabs = TRUE)  %>% 
+  kable_styling(full_width = FALSE) %>% 
+  column_spec(2, width = "12cm")
+```

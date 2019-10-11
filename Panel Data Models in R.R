@@ -1,5 +1,8 @@
 # Panel Data Models in R
 # Copyright 2013 by Ani Katchova
+# 
+# Using R for Introductory Econometrics
+# http://urfie.net/read.html
 
 # install.packages("plm")
 library(plm)
